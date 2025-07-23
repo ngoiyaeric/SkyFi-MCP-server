@@ -1,0 +1,450 @@
+name: SkyFi MCP Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "18"
+
+jobs:
+  # Unit Tests with Coverage
+  unit-tests:
+    name: Unit Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+      fail-fast: false
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Cache Python dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+        pip install pytest-cov pytest-asyncio pytest-mock pytest-benchmark
+        
+    - name: Run unit tests with coverage
+      run: |
+        pytest tests/unit/ \
+          --cov=src/mcp_skyfi \
+          --cov-report=xml \
+          --cov-report=html \
+          --cov-report=term-missing \
+          --junit-xml=unit-test-results.xml \
+          -v
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unit-tests
+        name: codecov-${{ matrix.python-version }}
+        
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: unit-test-results-${{ matrix.python-version }}
+        path: |
+          unit-test-results.xml
+          htmlcov/
+          coverage.xml
+
+  # Integration Tests
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
+    services:
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Cache Python dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-integration-${{ hashFiles('**/requirements*.txt') }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+        pip install pytest-asyncio pytest-mock httpx respx
+        
+    - name: Run integration tests
+      run: |
+        pytest tests/integration/ \
+          --junit-xml=integration-test-results.xml \
+          --tb=short \
+          -v
+      env:
+        REDIS_URL: redis://localhost:6379
+        TEST_ENVIRONMENT: integration
+        
+    - name: Upload integration test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: integration-test-results
+        path: integration-test-results.xml
+
+  # MCP Protocol Compliance Tests
+  mcp-compliance-tests:
+    name: MCP Protocol Compliance
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+        
+    - name: Run MCP compliance tests
+      run: |
+        pytest tests/mcp_protocol/ \
+          --junit-xml=mcp-compliance-results.xml \
+          --tb=short \
+          -v -m "mcp_compliance"
+          
+    - name: Upload MCP compliance results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: mcp-compliance-results
+        path: mcp-compliance-results.xml
+
+  # Security Tests
+  security-tests:
+    name: Security Testing
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install security testing tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit[toml] safety semgrep
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+        
+    - name: Run Bandit security scan
+      run: |
+        bandit -r src/ \
+          -f json \
+          -o bandit-results.json \
+          --exclude tests/ \
+          --skip B101,B601 \
+          || true
+          
+    - name: Run Safety dependency scan
+      run: |
+        safety check \
+          --json \
+          --output safety-results.json \
+          || true
+          
+    - name: Run Semgrep security scan
+      run: |
+        semgrep \
+          --config=auto \
+          --json \
+          --output=semgrep-results.json \
+          src/ \
+          || true
+          
+    - name: Run security vulnerability tests
+      run: |
+        pytest tests/security/ \
+          --junit-xml=security-test-results.xml \
+          --tb=short \
+          -v -m "security"
+          
+    - name: Generate security report
+      run: |
+        python scripts/generate_security_report.py \
+          --bandit bandit-results.json \
+          --safety safety-results.json \
+          --semgrep semgrep-results.json \
+          --output security-report.json
+          
+    - name: Upload security scan results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-results
+        path: |
+          bandit-results.json
+          safety-results.json
+          semgrep-results.json
+          security-report.json
+          security-test-results.xml
+
+  # Performance Tests
+  performance-tests:
+    name: Performance Testing
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+        pip install pytest-benchmark psutil
+        
+    - name: Run performance benchmarks
+      run: |
+        pytest tests/performance/ \
+          --benchmark-json=benchmark-results.json \
+          --junit-xml=performance-test-results.xml \
+          --tb=short \
+          -v -m "performance" \
+          --benchmark-warmup=on \
+          --benchmark-warmup-iterations=3
+          
+    - name: Check performance regression
+      run: |
+        python scripts/performance_regression_check.py \
+          --current benchmark-results.json \
+          --baseline performance-baseline.json \
+          --output performance-report.json
+          
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: performance-results
+        path: |
+          benchmark-results.json
+          performance-report.json
+          performance-test-results.xml
+
+  # Quality Gates Validation
+  quality-gates:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests, mcp-compliance-tests, security-tests, performance-tests]
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts/
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Aggregate test results
+      run: |
+        python scripts/aggregate_test_results.py \
+          --artifacts-dir artifacts/ \
+          --output aggregated-results.json
+          
+    - name: Run quality gate validation
+      id: quality_gates
+      run: |
+        python tests/quality_gates.py > quality-gate-summary.txt
+        echo "exit_code=$?" >> $GITHUB_OUTPUT
+        
+    - name: Display quality gate results
+      run: |
+        echo "## Quality Gates Results" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        cat quality-gate-summary.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        
+    - name: Upload quality gate results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: quality-gate-results
+        path: |
+          quality-gate-results.json
+          quality-gate-summary.txt
+          aggregated-results.json
+          
+    - name: Comment on PR with results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const summary = fs.readFileSync('quality-gate-summary.txt', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🔍 Quality Gates Results\n\n\`\`\`\n${summary}\n\`\`\``
+          });
+          
+    - name: Fail if quality gates don't pass
+      if: steps.quality_gates.outputs.exit_code != '0'
+      run: |
+        echo "❌ Quality gates failed. Deployment blocked."
+        exit 1
+
+  # End-to-End Tests (Optional)
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: quality-gates
+    if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+        
+    - name: Start SkyFi MCP server
+      run: |
+        python -m mcp_skyfi &
+        sleep 5  # Give server time to start
+        
+    - name: Run end-to-end tests
+      run: |
+        pytest tests/e2e/ \
+          --junit-xml=e2e-test-results.xml \
+          --tb=short \
+          -v
+          
+    - name: Upload E2E test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: e2e-test-results
+        path: e2e-test-results.xml
+
+  # Docker Build Test
+  docker-build:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    needs: quality-gates
+    if: success()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: false
+        tags: skyfi-mcp:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+    - name: Test Docker image
+      run: |
+        docker run --rm skyfi-mcp:test python -c "import mcp_skyfi; print('✅ Docker image works')"
+
+# Notification on workflow completion
+  notify:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: [quality-gates, e2e-tests, docker-build]
+    if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
+    steps:
+    - name: Notify success
+      if: ${{ needs.quality-gates.result == 'success' }}
+      run: |
+        echo "✅ All tests passed! Ready for deployment."
+        
+    - name: Notify failure
+      if: ${{ needs.quality-gates.result != 'success' }}
+      run: |
+        echo "❌ Tests failed. Deployment blocked."
+        
+    # Add actual notification integrations here (Slack, email, etc.)
