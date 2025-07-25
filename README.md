@@ -1,3 +1,5 @@
+![SkyFi Logo](public/Skyfi%20Logo.jpg)
+
 # SkyFi MCP Server
 
 A Model Context Protocol (MCP) server for integrating SkyFi satellite imagery capabilities with AI applications.
@@ -30,15 +32,13 @@ cd SkyFi-MCP
 pip install -e .
 ```
 
-### Configuration
+## MCP Client Setup
 
-Environment variables are configured in your **MCP client** (not in .env files). See the usage examples below.
+Configure the SkyFi MCP server with your preferred AI development environment:
 
-### Usage
+### 🖥️ Claude Desktop
 
-#### STDIO Transport (Claude Desktop)
-
-Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+Add to your configuration file (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
 
 ```json
 {
@@ -48,7 +48,7 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
       "args": ["-m", "mcp_skyfi"],
       "env": {
         "SKYFI_API_KEY": "your-email@example.com:your-api-key-hash",
-        "SKYFI_URL": "https://app.skyfi.com/platform-api"
+        "SKYFI_URL": "https://app.skyfi.com/platform-api/pricing"
       },
       "cwd": "/path/to/your/project"
     }
@@ -56,10 +56,157 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
 }
 ```
 
-**Important Configuration Notes:**
-- Use the **full path** to your Python executable (not just `"python"`)
-- Include the **working directory** (`cwd`) pointing to your project root
-- The API key format is `email:hash` (check your SkyFi account for the exact format)
+### ⚡ Cursor AI
+
+1. **Install the MCP extension** in Cursor
+2. **Add server configuration** to your Cursor settings (`Cmd/Ctrl + ,` → Extensions → MCP):
+
+```json
+{
+  "mcp.servers": {
+    "skyfi": {
+      "command": "/path/to/your/project/venv/bin/python",
+      "args": ["-m", "mcp_skyfi"],
+      "cwd": "/path/to/your/project",
+      "env": {
+        "SKYFI_API_KEY": "your-email@example.com:your-api-key-hash",
+        "SKYFI_URL": "https://app.skyfi.com/platform-api/pricing"
+      }
+    }
+  }
+}
+```
+
+3. **Alternative: Use .cursorrules file** in your project root:
+```json
+{
+  "mcp_servers": {
+    "skyfi": {
+      "command": "python",
+      "args": ["-m", "mcp_skyfi"],
+      "env": {
+        "SKYFI_API_KEY": "your-email@example.com:your-api-key-hash",
+        "SKYFI_URL": "https://app.skyfi.com/platform-api/pricing"
+      }
+    }
+  }
+}
+```
+
+### 🏄 Windsurf (Codeium)
+
+1. **Open Windsurf Settings** (`Ctrl/Cmd + ,`)
+2. **Navigate to Extensions** → **MCP Servers**
+3. **Add New Server** with these settings:
+
+```json
+{
+  "name": "skyfi",
+  "command": "/path/to/your/project/venv/bin/python",
+  "args": ["-m", "mcp_skyfi"],
+  "working_directory": "/path/to/your/project",
+  "environment": {
+    "SKYFI_API_KEY": "your-email@example.com:your-api-key-hash",
+    "SKYFI_URL": "https://app.skyfi.com/platform-api/pricing"
+  }
+}
+```
+
+**Alternative: Project-level configuration** (`.windsurf/mcp.json`):
+```json
+{
+  "servers": {
+    "skyfi": {
+      "command": "python",
+      "args": ["-m", "mcp_skyfi"],
+      "env": {
+        "SKYFI_API_KEY": "your-email@example.com:your-api-key-hash",
+        "SKYFI_URL": "https://app.skyfi.com/platform-api/pricing"
+      }
+    }
+  }
+}
+```
+
+### 📝 VSCode (with MCP Extension)
+
+1. **Install the MCP Extension** from VSCode Marketplace
+2. **Add to VSCode settings** (`Ctrl/Cmd + ,` → Search "mcp"):
+
+```json
+{
+  "mcp.servers": {
+    "skyfi": {
+      "command": "/path/to/your/project/venv/bin/python",
+      "args": ["-m", "mcp_skyfi"],
+      "cwd": "/path/to/your/project",
+      "env": {
+        "SKYFI_API_KEY": "your-email@example.com:your-api-key-hash",
+        "SKYFI_URL": "https://app.skyfi.com/platform-api/pricing"
+      }
+    }
+  }
+}
+```
+
+3. **Alternative: Workspace settings** (`.vscode/settings.json`):
+```json
+{
+  "mcp.servers": {
+    "skyfi": {
+      "command": "python",
+      "args": ["-m", "mcp_skyfi"],
+      "env": {
+        "SKYFI_API_KEY": "your-email@example.com:your-api-key-hash",
+        "SKYFI_URL": "https://app.skyfi.com/platform-api/pricing"
+      }
+    }
+  }
+}
+```
+
+### 🔧 Configuration Notes
+
+**🚨 Important Path Requirements:**
+- **Full Python Path**: Use absolute path to your Python executable (find with `which python` or `where python`)
+- **Working Directory**: Must point to the project root where `mcp_skyfi` module is located
+- **API Key Format**: Must be `email:hash` format from your SkyFi account
+
+**🔍 Finding Your Python Path:**
+```bash
+# On macOS/Linux
+which python
+# Or for virtual environments
+which python3
+
+# On Windows
+where python
+# Or
+python -c "import sys; print(sys.executable)"
+```
+
+**📦 Virtual Environment Paths:**
+- **Conda**: `~/miniconda3/envs/your-env/bin/python`
+- **venv**: `./venv/bin/python` (macOS/Linux) or `.\venv\Scripts\python.exe` (Windows)
+- **Poetry**: `~/.cache/pypoetry/virtualenvs/your-project-*/bin/python`
+
+### 🧪 Testing Your Setup
+
+After configuration, test with any of these commands in your AI assistant:
+
+```
+Use the osm_forward_geocode tool to find coordinates for "Empire State Building, New York"
+```
+
+```
+Search for recent satellite images of Central Park using skyfi_archive_search
+```
+
+```
+Get a pricing quote for satellite tasking over downtown Austin, Texas
+```
+
+**Expected Result**: You should see 21 tools available (13 SkyFi + 8 OSM tools)
 
 #### Environment Variables
 
@@ -83,17 +230,18 @@ python -m mcp_skyfi --transport http --port 8000
 
 ## Available Tools
 
-The MCP server provides **20 tools** across three categories:
+The MCP server provides **21 tools** across three categories:
 
-### 🛰️ SkyFi Satellite Imagery Tools (12 tools)
+### 🛰️ SkyFi Satellite Imagery Tools (13 tools)
 
 #### **Archive & Search Tools**
 - **`skyfi_archive_search`** - Search satellite imagery archive with geospatial, temporal, and quality filters
 - **`skyfi_archive_details`** - Get detailed information about a specific archive image including metadata and download options
 
 #### **Ordering Tools**  
+- **`skyfi_get_tasking_quote`** - Get detailed pricing quote and feasibility analysis for satellite tasking request (REQUIRED before ordering)
 - **`skyfi_create_archive_order`** - Create an order for existing archive satellite imagery with delivery options
-- **`skyfi_create_tasking_order`** - Create a tasking order for new satellite imagery capture with custom requirements
+- **`skyfi_create_tasking_order`** - Confirm and create a tasking order using a previously generated quote (requires quote confirmation)
 - **`skyfi_get_order_status`** - Get current status and progress information for an existing order
 
 #### **Monitoring & Notifications**
@@ -162,7 +310,7 @@ monitor = skyfi_setup_area_monitoring(
 )
 ```
 
-### Example 3: Get Pricing and Place Order
+### Example 3: Get Pricing and Place Archive Order
 
 ```python
 # Calculate pricing for archive images
@@ -179,6 +327,32 @@ if pricing.total_cost < 1000:
         delivery_method="download",
         output_format="GeoTIFF"
     )
+```
+
+### Example 4: Two-Step Tasking Order (Quote + Confirmation)
+
+```python
+# Step 1: Get detailed pricing quote (MANDATORY)
+quote = skyfi_get_tasking_quote(
+    geometry='{"type":"Polygon","coordinates":[[[-97.75,30.25],[-97.73,30.25],[-97.73,30.27],[-97.75,30.27],[-97.75,30.25]]]}',
+    start_date="2025-02-01",
+    end_date="2025-02-15",
+    max_cloud_cover=15.0,
+    priority="standard"
+)
+
+# Review the quote details:
+# - Total cost: $120.50 USD
+# - Capture probability: 75%
+# - Quote expires in 24 hours
+
+# Step 2: Confirm the order (required for security)
+if quote.pricing_breakdown.total_cost_usd <= 150:
+    order = skyfi_create_tasking_order(
+        quote_id=quote.quote_id,
+        confirm="yes"  # Explicit confirmation required
+    )
+    # Order created and payment processed
 ```
 
 ## Integrations
@@ -332,7 +506,7 @@ To verify your MCP server is working correctly:
    ```
 
 3. **Verify tool count:**
-   You should see **20 tools** available (12 SkyFi + 8 OSM tools)
+   You should see **21 tools** available (13 SkyFi + 8 OSM tools)
 
 ## Contributing
 
