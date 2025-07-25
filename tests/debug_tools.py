@@ -15,7 +15,7 @@ sys.path.insert(0, str(src_path))
 
 # Set environment variables
 os.environ.update({
-    "SKYFI_API_KEY": "lucas@skyfi.com:4068b1eeebe3654ab5fba6b8d662157cad4049f7346cfce0f86901beb6084b62",
+    "SKYFI_API_KEY": os.environ.get("SKYFI_API_KEY", "your_test_api_key_here"),
     "SKYFI_URL": "https://app.skyfi.com/platform-api/pricing",
     "LOG_LEVEL": "DEBUG"
 })
