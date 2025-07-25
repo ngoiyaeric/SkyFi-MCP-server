@@ -13,7 +13,6 @@ Architecture:
 6. Network Layer - HTTP clients and external API management
 """
 
-from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
@@ -21,7 +20,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Literal, Optional
 
 from fastmcp import FastMCP
-from fastmcp.server import MCPTool
+from fastmcp.tools import Tool
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request
@@ -35,6 +34,8 @@ from .dependencies import (
     is_read_only_mode
 )
 from ..middleware.auth import UserTokenMiddleware
+from ..middleware.oauth21 import OAuth21ResourceServer, OAuthConfig
+from ..middleware.oauth_discovery import OAuthDiscoveryEndpoints
 from ..skyfi import skyfi_mcp
 from ..osm import osm_mcp  
 from ..weather import weather_mcp
@@ -55,7 +56,7 @@ class SkyFiMCP(FastMCP[MainAppContext]):
     - Comprehensive health monitoring and metrics
     """
 
-    async def _mcp_list_tools(self) -> list[MCPTool]:
+    async def _mcp_list_tools(self) -> list[dict]:
         """
         Override FastMCP's tool discovery with custom filtering logic.
         
@@ -84,7 +85,9 @@ class SkyFiMCP(FastMCP[MainAppContext]):
 
         for tool_name, tool_obj in all_tools.items():
             if self._should_include_tool(tool_name, tool_obj, app_context):
-                filtered_tools.append(tool_obj.to_mcp_tool(name=tool_name))
+                # Convert Tool to MCP format for protocol response
+                mcp_tool = tool_obj.to_mcp_tool()
+                filtered_tools.append(mcp_tool)
                 tool_count["enabled"] += 1
             else:
                 tool_count["filtered"] += 1
@@ -162,27 +165,52 @@ class SkyFiMCP(FastMCP[MainAppContext]):
         transport: Literal["streamable-http", "sse"] = "streamable-http",
     ) -> Starlette:
         """
-        Create HTTP application with custom middleware pipeline.
+        Create HTTP application with OAuth 2.1 compliant middleware pipeline.
         
-        Middleware Stack:
-        1. User Authentication Middleware (token extraction)
-        2. Rate Limiting Middleware (future)
-        3. Request Logging Middleware (future)
-        4. CORS Middleware (if enabled)
+        Middleware Stack (Priority Order):
+        1. OAuth 2.1 Resource Server Middleware (Bearer token validation)
+        2. User Authentication Middleware (multi-method token extraction) 
+        3. Rate Limiting Middleware (future)
+        4. Request Logging Middleware (future)
+        5. CORS Middleware (if enabled)
         """
-        # Build middleware pipeline
-        auth_middleware = Middleware(UserTokenMiddleware, mcp_server_ref=self)
-        final_middleware = [auth_middleware]
+        # Build middleware pipeline with OAuth 2.1 integration
+        final_middleware = []
         
+        # 1. OAuth 2.1 Resource Server (highest priority for Bearer tokens)
+        oauth_config = OAuthConfig.from_env()
+        if oauth_config:
+            oauth_middleware = Middleware(OAuth21ResourceServer, config=oauth_config)
+            final_middleware.append(oauth_middleware)
+            logger.info("✅ OAuth 2.1 resource server middleware enabled")
+        else:
+            logger.info("ℹ️ OAuth 2.1 not configured - using fallback authentication methods")
+        
+        # 2. Enhanced User Authentication Middleware (integrated with OAuth)
+        auth_middleware = Middleware(UserTokenMiddleware, mcp_server_ref=self)
+        final_middleware.append(auth_middleware)
+        
+        # 3. Add any additional middleware
         if middleware:
             final_middleware.extend(middleware)
 
-        # Create HTTP app with enhanced configuration
+        # Create HTTP app with OAuth 2.1 compliance
         app = super().http_app(
             path=path,
             middleware=final_middleware,
             transport=transport
         )
+        
+        # Add OAuth discovery endpoints if configured
+        if oauth_config:
+            base_url = "https://localhost:8000"  # Would be configured from environment
+            discovery = OAuthDiscoveryEndpoints(oauth_config, base_url)
+            
+            # Mount discovery routes
+            for route in discovery.get_routes():
+                app.router.routes.append(route)
+            
+            logger.info("✅ OAuth 2.1 discovery endpoints mounted")
 
         return app
 
@@ -289,9 +317,10 @@ main_mcp = SkyFiMCP(
 )
 
 # Mount service modules with clear namespace separation
-main_mcp.mount("skyfi", skyfi_mcp)
-main_mcp.mount("osm", osm_mcp)
-main_mcp.mount("weather", weather_mcp)
+# Updated for FastMCP 2.10.6+ - mount without deprecated prefix parameter
+main_mcp.mount(skyfi_mcp)
+main_mcp.mount(osm_mcp)
+main_mcp.mount(weather_mcp)
 
 
 # Add health check endpoint for monitoring

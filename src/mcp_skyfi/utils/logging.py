@@ -1,325 +1,380 @@
-"""
-Logging Configuration
-
-Structured logging setup for the SkyFi MCP server with support for
-different output formats, log levels, and monitoring integration.
-"""
-
-from __future__ import annotations
 
 import logging
+import logging.config
 import sys
-from logging.handlers import RotatingFileHandler
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-try:
-    import structlog
-    HAS_STRUCTLOG = True
-except ImportError:
-    HAS_STRUCTLOG = False
+import structlog
 
 
 def configure_logging(
     level: str = "INFO",
-    format_type: str = "structured",
-    output: str = "stdout",
-    file_path: Optional[str] = None,
-    max_file_size: int = 10485760,  # 10MB
-    backup_count: int = 5
+    format_type: str = "json",
+    include_timestamp: bool = True,
+    include_caller: bool = False,
+    service_name: str = "mcp-skyfi"
 ) -> None:
     """
-    Configure logging for the SkyFi MCP server.
+    Configure structured logging for the MCP server.
     
     Args:
-        level: Logging level (DEBUG, INFO, WARNING, ERROR)
-        format_type: Format type (structured, json, simple)
-        output: Output destination (stdout, stderr, file)
-        file_path: Path for file output
-        max_file_size: Maximum log file size in bytes
-        backup_count: Number of backup files to keep
+        level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        format_type: Format type (json, console, simple)
+        include_timestamp: Whether to include timestamps
+        include_caller: Whether to include caller information
+        service_name: Service name for log context
     """
+    # Convert string level to logging level
+    numeric_level = getattr(logging, level.upper(), logging.INFO)
     
-    # Convert string level to logging constant
-    log_level = getattr(logging, level.upper(), logging.INFO)
+    # Configure standard logging
+    logging.basicConfig(
+        level=numeric_level,
+        stream=sys.stdout,
+        format="%(message)s"  # structlog will handle formatting
+    )
     
-    # Configure root logger
-    logging.root.setLevel(log_level)
+    # Build processor chain
+    processors = []
     
-    # Clear any existing handlers
-    for handler in logging.root.handlers[:]:
-        logging.root.removeHandler(handler)
+    # Filter by level
+    processors.append(structlog.stdlib.filter_by_level)
     
-    # Create formatter based on type
-    if format_type == "structured" and HAS_STRUCTLOG:
-        configure_structured_logging(level)
-    else:
-        configure_standard_logging(level, format_type, output, file_path, max_file_size, backup_count)
+    # Add logger name
+    processors.append(structlog.stdlib.add_logger_name)
     
-    # Configure specific loggers
-    configure_logger_levels()
+    # Add log level
+    processors.append(structlog.stdlib.add_log_level)
     
-    # Log startup message
-    logger = logging.getLogger("mcp-skyfi.logging")
-    logger.info(f"Logging configured: level={level}, format={format_type}, output={output}")
-
-
-def configure_structured_logging(level: str) -> None:
-    """Configure structured logging with structlog."""
+    # Handle positional arguments
+    processors.append(structlog.stdlib.PositionalArgumentsFormatter())
     
-    log_level = getattr(logging, level.upper(), logging.INFO)
+    # Add timestamp if requested
+    if include_timestamp:
+        processors.append(structlog.processors.TimeStamper(fmt="iso"))
+    
+    # Add caller info if requested
+    if include_caller:
+        processors.append(structlog.processors.StackInfoRenderer())
+        processors.append(structlog.dev.set_exc_info)
+    
+    # Handle exceptions
+    processors.append(structlog.processors.format_exc_info)
+    
+    # Unicode handling
+    processors.append(structlog.processors.UnicodeDecoder())
+    
+    # Add log level info
+    processors.append(structlog.processors.add_log_level)
+    
+    # Choose final processor based on format type
+    if format_type == "json":
+        processors.append(structlog.processors.JSONRenderer())
+    elif format_type == "console":
+        processors.append(
+            structlog.dev.ConsoleRenderer(colors=True)
+        )
+    else:  # simple
+        processors.append(
+            structlog.processors.KeyValueRenderer(
+                key_order=["timestamp", "level", "logger", "message"]
+            )
+        )
     
     # Configure structlog
     structlog.configure(
-        processors=[
-            structlog.stdlib.filter_by_level,
-            structlog.stdlib.add_logger_name,
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.PositionalArgumentsFormatter(),
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.UnicodeDecoder(),
-            structlog.processors.JSONRenderer()
-        ],
+        processors=processors,
         context_class=dict,
         logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
     )
     
-    # Add handler to root logger
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(log_level)
-    logging.root.addHandler(handler)
+    # Set up service context
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(service=service_name)
+    
+    # Configure specific loggers
+    _configure_third_party_loggers(numeric_level)
 
 
-def configure_standard_logging(
-    level: str,
-    format_type: str,
-    output: str,
-    file_path: Optional[str],
-    max_file_size: int,
-    backup_count: int
-) -> None:
-    """Configure standard Python logging."""
+def _configure_third_party_loggers(level: int) -> None:
+    """Configure third-party library loggers."""
+    # Reduce httpx logging verbosity
+    logging.getLogger("httpx").setLevel(max(level, logging.WARNING))
+    logging.getLogger("httpcore").setLevel(max(level, logging.WARNING))
     
-    log_level = getattr(logging, level.upper(), logging.INFO)
+    # Reduce uvicorn logging verbosity in production
+    if level >= logging.INFO:
+        logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+        logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
     
-    # Define formatters
-    formatters = {
-        "simple": logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        ),
-        "detailed": logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s"
-        ),
-        "json": JsonFormatter() if format_type == "json" else logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-    }
-    
-    formatter = formatters.get(format_type, formatters["simple"])
-    
-    # Create handler based on output type
-    if output == "file" and file_path:
-        handler = RotatingFileHandler(
-            file_path, 
-            maxBytes=max_file_size,
-            backupCount=backup_count
-        )
-    elif output == "stderr":
-        handler = logging.StreamHandler(sys.stderr)
-    else:  # stdout (default)
-        handler = logging.StreamHandler(sys.stdout)
-    
-    handler.setLevel(log_level)
-    handler.setFormatter(formatter)
-    
-    logging.root.addHandler(handler)
+    # FastMCP logging
+    logging.getLogger("fastmcp").setLevel(level)
 
 
-def configure_logger_levels() -> None:
-    """Configure specific logger levels for better control."""
-    
-    # Reduce noise from external libraries
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("requests").setLevel(logging.WARNING)
-    
-    # FastMCP and MCP related
-    logging.getLogger("fastmcp").setLevel(logging.INFO)
-    logging.getLogger("mcp").setLevel(logging.INFO)
-    
-    # Our application loggers
-    logging.getLogger("mcp-skyfi").setLevel(logging.DEBUG)
-
-
-class JsonFormatter(logging.Formatter):
-    """JSON formatter for structured logging without structlog."""
-    
-    def format(self, record: logging.LogRecord) -> str:
-        import json
-        from datetime import datetime
-        
-        log_entry = {
-            "timestamp": datetime.utcfromtimestamp(record.created).isoformat() + "Z",
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "module": record.module,
-            "function": record.funcName,
-            "line": record.lineno
-        }
-        
-        # Add exception info if present
-        if record.exc_info:
-            log_entry["exception"] = self.formatException(record.exc_info)
-        
-        # Add extra fields
-        if hasattr(record, '__dict__'):
-            extra_fields = {
-                k: v for k, v in record.__dict__.items()
-                if k not in {
-                    'name', 'msg', 'args', 'levelname', 'levelno', 'pathname',
-                    'filename', 'module', 'lineno', 'funcName', 'created',
-                    'msecs', 'relativeCreated', 'thread', 'threadName',
-                    'processName', 'process', 'stack_info', 'exc_info',
-                    'exc_text', 'message'
-                }
-            }
-            if extra_fields:
-                log_entry["extra"] = extra_fields
-        
-        return json.dumps(log_entry)
-
-
-def get_logger(name: str, **kwargs) -> logging.Logger:
+def get_logger(name: str, **context: Any) -> structlog.BoundLogger:
     """
-    Get a configured logger instance.
+    Get a structured logger with optional context.
     
     Args:
-        name: Logger name
-        **kwargs: Additional context for structured logging
+        name: Logger name (usually __name__)
+        **context: Additional context to bind to logger
         
     Returns:
-        Configured logger instance
+        Bound structlog logger
     """
-    logger = logging.getLogger(name)
-    
-    if HAS_STRUCTLOG and kwargs:
-        # Return structured logger with bound context
-        return structlog.get_logger(name).bind(**kwargs)
-    
+    logger = structlog.get_logger(name)
+    if context:
+        logger = logger.bind(**context)
     return logger
 
 
-def log_request(
-    logger: logging.Logger,
+def log_function_call(
+    logger: structlog.BoundLogger,
+    function_name: str,
+    args: Optional[Dict[str, Any]] = None,
+    level: str = "DEBUG"
+) -> None:
+    """
+    Log function call with arguments.
+    
+    Args:
+        logger: Logger instance
+        function_name: Name of function being called
+        args: Function arguments (sensitive values should be pre-masked)
+        level: Log level
+    """
+    log_level = getattr(logging, level.upper(), logging.DEBUG)
+    
+    if logger.isEnabledFor(log_level):
+        log_args = args or {}
+        getattr(logger, level.lower())(
+            f"Calling {function_name}",
+            function=function_name,
+            args=log_args
+        )
+
+
+def log_api_request(
+    logger: structlog.BoundLogger,
     method: str,
     url: str,
     status_code: Optional[int] = None,
     duration_ms: Optional[float] = None,
-    **kwargs
+    **extra: Any
 ) -> None:
     """
-    Log HTTP request information.
+    Log API request with structured data.
     
     Args:
         logger: Logger instance
         method: HTTP method
-        url: Request URL
-        status_code: Response status code
+        url: Request URL (should be sanitized)
+        status_code: HTTP status code
         duration_ms: Request duration in milliseconds
-        **kwargs: Additional context
+        **extra: Additional context
     """
-    context = {
+    log_data = {
+        "event_type": "api_request",
         "method": method,
         "url": url,
-        "status_code": status_code,
-        "duration_ms": duration_ms,
-        **kwargs
+        **extra
     }
     
-    if status_code and status_code >= 400:
-        logger.error(f"HTTP {method} {url} failed", extra=context)
+    if status_code is not None:
+        log_data["status_code"] = status_code
+    if duration_ms is not None:
+        log_data["duration_ms"] = round(duration_ms, 2)
+    
+    # Choose log level based on status code
+    if status_code is None:
+        level = "info"
+    elif status_code < 400:
+        level = "info"
+    elif status_code < 500:
+        level = "warning"
     else:
-        logger.info(f"HTTP {method} {url}", extra=context)
+        level = "error"
+    
+    getattr(logger, level)("API request", **log_data)
 
 
-def log_tool_execution(
-    logger: logging.Logger,
+def log_mcp_tool_execution(
+    logger: structlog.BoundLogger,
     tool_name: str,
+    params: Dict[str, Any],
     success: bool,
-    duration_ms: Optional[float] = None,
-    error: Optional[str] = None,
-    **kwargs
+    duration_ms: float,
+    error: Optional[str] = None
 ) -> None:
     """
-    Log tool execution information.
+    Log MCP tool execution with structured data.
     
     Args:
         logger: Logger instance
-        tool_name: Name of the executed tool
+        tool_name: Name of MCP tool
+        params: Tool parameters (sensitive values should be pre-masked)
         success: Whether execution was successful
         duration_ms: Execution duration in milliseconds
-        error: Error message if execution failed
-        **kwargs: Additional context
+        error: Error message if failed
     """
-    context = {
+    log_data = {
+        "event_type": "mcp_tool_execution",
         "tool_name": tool_name,
+        "params": params,
         "success": success,
-        "duration_ms": duration_ms,
-        **kwargs
+        "duration_ms": round(duration_ms, 2)
     }
     
-    if success:
-        logger.info(f"Tool {tool_name} executed successfully", extra=context)
-    else:
-        context["error"] = error
-        logger.error(f"Tool {tool_name} execution failed", extra=context)
+    if error:
+        log_data["error"] = error
+    
+    level = "info" if success else "error"
+    message = f"MCP tool {'completed' if success else 'failed'}: {tool_name}"
+    
+    getattr(logger, level)(message, **log_data)
 
 
-def create_audit_logger(name: str = "mcp-skyfi.audit") -> logging.Logger:
+def mask_sensitive_data(data: Dict[str, Any], sensitive_keys: Optional[list[str]] = None) -> Dict[str, Any]:
     """
-    Create a logger specifically for audit events.
+    Mask sensitive data in dictionary for safe logging.
     
     Args:
-        name: Logger name
+        data: Data dictionary
+        sensitive_keys: List of keys to mask (case-insensitive)
         
     Returns:
-        Configured audit logger
+        Dictionary with sensitive values masked
     """
-    audit_logger = logging.getLogger(name)
+    if sensitive_keys is None:
+        sensitive_keys = [
+            "password", "passwd", "pwd",
+            "secret", "key", "token", "auth",
+            "api_key", "access_token", "refresh_token",
+            "private_key", "client_secret"
+        ]
     
-    # Audit logs should always be at INFO level or higher
-    audit_logger.setLevel(logging.INFO)
+    sensitive_keys_lower = [key.lower() for key in sensitive_keys]
+    masked_data = {}
     
-    return audit_logger
+    for key, value in data.items():
+        if any(sensitive in key.lower() for sensitive in sensitive_keys_lower):
+            if isinstance(value, str) and len(value) > 4:
+                masked_data[key] = "*" * (len(value) - 4) + value[-4:]
+            else:
+                masked_data[key] = "***"
+        elif isinstance(value, dict):
+            masked_data[key] = mask_sensitive_data(value, sensitive_keys)
+        else:
+            masked_data[key] = value
+    
+    return masked_data
+
+
+class RequestLogger:
+    """Helper class for request logging with timing."""
+    
+    def __init__(self, logger: structlog.BoundLogger, operation: str):
+        self.logger = logger
+        self.operation = operation
+        self.start_time: Optional[float] = None
+    
+    def __enter__(self):
+        import time
+        self.start_time = time.perf_counter()
+        self.logger.debug(f"Starting {self.operation}")
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.start_time is not None:
+            import time
+            duration_ms = (time.perf_counter() - self.start_time) * 1000
+            
+            if exc_type is None:
+                self.logger.info(
+                    f"Completed {self.operation}",
+                    duration_ms=round(duration_ms, 2)
+                )
+            else:
+                self.logger.error(
+                    f"Failed {self.operation}",
+                    duration_ms=round(duration_ms, 2),
+                    error=str(exc_val) if exc_val else str(exc_type)
+                )
 
 
 def log_security_event(
     event_type: str,
-    user_id: Optional[str] = None,
     ip_address: Optional[str] = None,
-    details: Optional[Dict[str, Any]] = None
+    user_id: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+    level: str = "WARNING"
 ) -> None:
     """
-    Log security-related events.
+    Log security events with structured data for monitoring and alerting.
     
     Args:
-        event_type: Type of security event
-        user_id: User identifier
+        event_type: Type of security event (auth_failure, rate_limit, etc.)
         ip_address: Client IP address
+        user_id: User identifier if available
         details: Additional event details
+        level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     """
-    audit_logger = create_audit_logger("mcp-skyfi.security")
+    security_logger = structlog.get_logger("mcp-skyfi.security")
     
-    context = {
-        "event_type": event_type,
-        "user_id": user_id,
-        "ip_address": ip_address,
-        "details": details or {}
+    log_data = {
+        "event_type": "security_event",
+        "security_event_type": event_type,
+        "timestamp": structlog.processors.TimeStamper(fmt="iso")(),
     }
     
-    audit_logger.warning(f"Security event: {event_type}", extra=context)
+    if ip_address:
+        log_data["ip_address"] = ip_address
+    if user_id:
+        log_data["user_id"] = user_id
+    if details:
+        # Mask sensitive data in details
+        log_data["details"] = mask_sensitive_data(details)
+    
+    # Log at appropriate level
+    log_level = getattr(logging, level.upper(), logging.WARNING)
+    getattr(security_logger, level.lower())(
+        f"Security event: {event_type}",
+        **log_data
+    )
+
+
+class PerformanceLogger:
+    """Performance monitoring logger."""
+    
+    def __init__(self, logger: structlog.BoundLogger):
+        self.logger = logger
+    
+    def log_timing(self, operation: str, duration_ms: float, **context: Any):
+        """Log operation timing."""
+        self.logger.info(
+            f"Performance: {operation}",
+            operation=operation,
+            duration_ms=round(duration_ms, 2),
+            **context
+        )
+    
+    def log_memory_usage(self, operation: str, memory_mb: float, **context: Any):
+        """Log memory usage."""
+        self.logger.info(
+            f"Memory: {operation}",
+            operation=operation,
+            memory_mb=round(memory_mb, 2),
+            **context
+        )
+    
+    def log_rate_limit(self, endpoint: str, limit: int, remaining: int, reset_time: Optional[str] = None):
+        """Log rate limit status."""
+        self.logger.info(
+            f"Rate limit: {endpoint}",
+            endpoint=endpoint,
+            limit=limit,
+            remaining=remaining,
+            reset_time=reset_time
+        )

@@ -1,0 +1,173 @@
+# SkyFi API Debug Report - Tasking Order Creation Issues
+
+## Summary
+This document details the various API calls attempted when trying to create a satellite tasking order for the Gauntlet AI headquarters in Austin, TX, and the errors encountered. This information should help debug and improve the MCP server implementation.
+
+## Successful API Calls
+
+### 1. OSM Forward Geocode ✅
+**Tool:** `skyfi:osm_forward_geocode`
+**Parameters:**
+```json
+{
+  "query": "Empire State Building, New York"
+}
+```
+**Result:** SUCCESS - Returned coordinates and detailed location information
+
+### 2. OSM Bounding Box Creation ✅
+**Tool:** `skyfi:osm_create_bounding_box`
+**Parameters:**
+```json
+{
+  "output_format": "geojson",
+  "points": [
+    [-97.7496888, 30.26246],
+    [-97.7496888, 30.27146], 
+    [-97.7376888, 30.27146],
+    [-97.7376888, 30.26246]
+  ]
+}
+```
+**Result:** SUCCESS - Generated proper GeoJSON polygon geometry
+
+## Failed API Calls
+
+### 1. OSM Generate AOI ❌
+**Tool:** `skyfi:osm_generate_aoi`
+**Parameters:**
+```json
+{
+  "center_point": [30.2669600, -97.7436888],
+  "output_format": "geojson",
+  "radius_meters": 500
+}
+```
+**Error:** `AOI generation error: 'FunctionTool' object is not callable`
+**Analysis:** This appears to be an internal server error, possibly related to how the MCP server is handling the function call.
+
+### 2. Satellite Tasking Order Creation - Multiple Attempts ❌
+
+#### Attempt 1: Full Parameter Set
+**Tool:** `skyfi:skyfi_create_tasking_order`
+**Parameters:**
+```json
+{
+  "budget_limit": 40.0,
+  "delivery_method": "download",
+  "end_date": "2025-07-30",
+  "geometry": "{\"type\":\"Polygon\",\"coordinates\":[[[-97.7496888,30.26246],[-97.7376888,30.26246],[-97.7376888,30.27146],[-97.7496888,30.27146],[-97.7496888,30.26246]]]}",
+  "max_cloud_cover": 15.0,
+  "min_resolution": 1.0,
+  "output_format": "GeoTIFF",
+  "preferred_satellites": ["SIWEI", "SATELLOGIC"],
+  "priority": "standard",
+  "processing_level": "L1C",
+  "start_date": "2025-07-24"
+}
+```
+**Error:** `Input validation error: '["SIWEI", "SATELLOGIC"]' is not valid under any of the given schemas`
+
+#### Attempt 2: Without Preferred Satellites
+**Parameters:** (Same as above, minus `preferred_satellites`)
+**Error:** `Input validation error: '1.0' is not valid under any of the given schemas`
+
+#### Attempt 3: Without Min Resolution
+**Parameters:** (Same as above, minus `min_resolution`)
+**Error:** `Input validation error: '40.0' is not valid under any of the given schemas`
+
+#### Attempt 4: Minimal Required Parameters Only
+**Parameters:**
+```json
+{
+  "end_date": "2025-07-30",
+  "geometry": "{\"type\":\"Polygon\",\"coordinates\":[[[-97.7496888,30.26246],[-97.7376888,30.26246],[-97.7376888,30.27146],[-97.7496888,30.27146],[-97.7496888,30.26246]]]}",
+  "start_date": "2025-07-24"
+}
+```
+**Error:** `Tasking order failed: HTTP 404`
+
+## Error Analysis & Debugging Suggestions
+
+### 1. Parameter Type Issues
+The validation errors suggest that the MCP server may have incorrect type definitions:
+
+- **Array Parameters:** `preferred_satellites` array not being accepted
+- **Numeric Parameters:** `min_resolution` (1.0) and `budget_limit` (40.0) not being accepted
+- **String Parameters:** Dates and geometry seem to work
+
+### 2. Schema Validation Problems
+The error `'X' is not valid under any of the given schemas` suggests:
+- OpenAPI/JSON schema definitions may be incorrect
+- Parameter types in the MCP server don't match the actual SkyFi API requirements
+- Possible issues with how arrays and numbers are being serialized
+
+### 3. HTTP 404 Error
+When using minimal parameters, getting HTTP 404 suggests:
+- API endpoint URL may be incorrect
+- Authentication headers missing or malformed
+- API version mismatch
+- Service endpoint not available
+
+## Recommended MCP Server Fixes
+
+### 1. Parameter Type Validation
+Review and correct the parameter schemas for:
+```typescript
+// These parameters had validation issues:
+preferred_satellites: string[] | null  // Array validation failed
+min_resolution: number | null          // Number validation failed  
+budget_limit: number | null           // Number validation failed
+max_cloud_cover: number               // This one seemed to work
+```
+
+### 2. Geometry Parameter Handling
+The geometry parameter worked correctly when passed as a JSON string. Verify the schema expects:
+```typescript
+geometry: string  // JSON string representation of GeoJSON
+// NOT: geometry: GeoJSONGeometry object
+```
+
+### 3. API Endpoint Verification
+- Verify the base URL for the SkyFi tasking API
+- Check if authentication headers are being properly set
+- Confirm the API version being used
+
+### 4. Array Parameter Serialization
+The `preferred_satellites` parameter may need special handling:
+```typescript
+// Instead of: ["SIWEI", "SATELLOGIC"]
+// Try: "SIWEI,SATELLOGIC" or handle array serialization differently
+```
+
+### 5. Function Tool Error Fix
+The `osm_generate_aoi` error suggests a fundamental issue with function handling:
+```
+'FunctionTool' object is not callable
+```
+This indicates the MCP server may have an issue with how it's instantiating or calling certain functions.
+
+## Testing Recommendations
+
+1. **Start with minimal parameters** and add complexity gradually
+2. **Test parameter types individually** to isolate validation issues
+3. **Check API authentication** independently
+4. **Verify endpoint URLs** against SkyFi documentation
+5. **Test with SkyFi's official API client** to compare expected vs actual behavior
+
+## Working Geometry Example
+This GeoJSON polygon was successfully generated and should work for tasking:
+```json
+{
+  "type": "Polygon",
+  "coordinates": [[
+    [-97.7496888, 30.26246],
+    [-97.7376888, 30.26246],
+    [-97.7376888, 30.27146],
+    [-97.7496888, 30.27146],
+    [-97.7496888, 30.26246]
+  ]]
+}
+```
+
+Area covered: 1.15 km × 1.00 km around Gauntlet AI headquarters (416 Congress Ave, Austin, TX).

@@ -5,14 +5,13 @@ Configuration management for SkyFi Platform API integration with
 multi-method authentication and enterprise features.
 """
 
-from __future__ import annotations
 
 import os
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
 
 from ..utils.environment import (
-    get_env_bool, get_env_int, get_env_list, get_env_dict, get_env_url
+    get_env_bool, get_env_int, get_env_list, get_env_dict, validate_env_url
 )
 
 
@@ -90,7 +89,7 @@ class SkyFiConfig:
     """Cache time-to-live in seconds (5 minutes default)"""
 
     @classmethod
-    def from_env(cls) -> SkyFiConfig:
+    def from_env(cls) -> 'SkyFiConfig':
         """
         Create configuration from environment variables.
         
@@ -124,7 +123,7 @@ class SkyFiConfig:
         """
         
         # Get API URL (required)
-        api_url = get_env_url("SKYFI_API_URL") or get_env_url("SKYFI_URL")
+        api_url = validate_env_url("SKYFI_API_URL") or validate_env_url("SKYFI_URL")
         if not api_url:
             raise ValueError(
                 "SkyFi API URL is required. Set SKYFI_API_URL or SKYFI_URL environment variable."

@@ -13,22 +13,38 @@ Features:
 - Multi-authentication support (API key, OAuth)
 """
 
-from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from fastmcp import FastMCP
-from ..servers.context import MainAppContext
+
+if TYPE_CHECKING:
+    from ..servers.context import MainAppContext
 
 logger = logging.getLogger("mcp-skyfi.skyfi")
 
 # Initialize SkyFi service MCP instance
-skyfi_mcp = FastMCP[MainAppContext](name="SkyFi Platform API")
+skyfi_mcp = FastMCP(name="SkyFi Platform API")
 
 # Import and register tools after MCP instance creation
-from . import archives  # Archive search and management tools
-from . import ordering   # Order creation and management tools
-from . import notifications  # Webhook and notification tools
-from . import pricing    # Pricing and cost estimation tools
-from . import feasibility  # Satellite pass predictions
+from . import archives      # Archive search and management tools
+from . import ordering      # Order creation and management tools
+from . import notifications # Webhook and notification tools
+from . import pricing       # Pricing and cost estimation tools
+from . import feasibility   # Satellite pass predictions
+# from . import factory_integration_example  # Factory pattern examples - disabled to avoid circular imports
+from .config import SkyFiConfig
+from .factory import SkyFiClientFactory, get_client_factory, create_skyfi_client
+from .dependencies import get_skyfi_client, SkyFiContext
 
-logger.info("SkyFi service module initialized with all tool categories")
+logger.info("SkyFi service module initialized with factory and dependencies")
+
+__all__ = [
+    "skyfi_mcp",
+    "SkyFiConfig",
+    "SkyFiClientFactory",
+    "get_client_factory", 
+    "create_skyfi_client",
+    "get_skyfi_client",
+    "SkyFiContext"
+]

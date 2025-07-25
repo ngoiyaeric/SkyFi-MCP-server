@@ -8,7 +8,6 @@ This module provides factory functions and dependency injection utilities
 for managing service configurations, authentication, and runtime settings.
 """
 
-from __future__ import annotations
 
 import os
 from typing import Dict, List, Optional, Type, Any, Union

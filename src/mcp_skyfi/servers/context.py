@@ -8,14 +8,19 @@ This module implements the context pattern for managing application-wide
 state, configuration, and service instances across the request lifecycle.
 """
 
-from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
+from threading import RLock
+from copy import deepcopy
 
 from ..skyfi.config import SkyFiConfig
 from ..osm.config import OSMConfig  
 from ..weather.config import WeatherConfig
+from ..exceptions import SkyFiMCPError
+
+logger = logging.getLogger("mcp-skyfi.context")
 
 
 @dataclass
@@ -59,6 +64,10 @@ class MainAppContext:
     
     request_metadata: Dict[str, Any] = field(default_factory=dict)
     """Request-specific metadata and tracking information"""
+    
+    # Thread Safety
+    _context_lock: RLock = field(default_factory=RLock, init=False)
+    """Lock for thread-safe context operations"""
 
     def is_service_available(self, service_name: str) -> bool:
         """
@@ -177,6 +186,272 @@ class MainAppContext:
         """
         return bool(self.get_user_auth_token())
 
+    def get_effective_credentials(self, user_context: Optional[Dict[str, Any]] = None, service: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get effective credentials with 4-tier precedence hierarchy.
+        
+        Precedence Order:
+        1. Client credentials (per-request user context)
+        2. OAuth credentials (from user context or config)
+        3. Server credentials (from service configuration)
+        4. Environment credentials (fallback from config)
+        
+        Args:
+            user_context: Per-request user authentication context
+            service: Specific service name for service-specific credentials
+            
+        Returns:
+            Dictionary containing effective credentials with metadata
+            
+        Raises:
+            SkyFiMCPError: If no valid credentials are found
+        """
+        with self._context_lock:
+            effective_user_context = user_context or self.user_context
+            
+            credentials = {
+                "token": None,
+                "type": None,
+                "source": None,
+                "service": service,
+                "metadata": {},
+                "precedence_level": 0
+            }
+            
+            # Level 1: Client credentials (highest priority)
+            client_creds = self._get_client_credentials(effective_user_context)
+            if client_creds["token"]:
+                credentials.update(client_creds)
+                credentials["precedence_level"] = 1
+                logger.debug(f"Using client credentials for {service or 'default'}")
+                return credentials
+            
+            # Level 2: OAuth credentials
+            oauth_creds = self._get_oauth_credentials(effective_user_context, service)
+            if oauth_creds["token"]:
+                credentials.update(oauth_creds)
+                credentials["precedence_level"] = 2
+                logger.debug(f"Using OAuth credentials for {service or 'default'}")
+                return credentials
+            
+            # Level 3: Server credentials
+            server_creds = self._get_server_credentials(service)
+            if server_creds["token"]:
+                credentials.update(server_creds)
+                credentials["precedence_level"] = 3
+                logger.debug(f"Using server credentials for {service or 'default'}")
+                return credentials
+            
+            # Level 4: Environment credentials (fallback)
+            env_creds = self._get_environment_credentials(service)
+            if env_creds["token"]:
+                credentials.update(env_creds)
+                credentials["precedence_level"] = 4
+                logger.debug(f"Using environment credentials for {service or 'default'}")
+                return credentials
+            
+            # No credentials found
+            logger.warning(f"No valid credentials found for service: {service or 'default'}")
+            raise SkyFiMCPError(f"No valid credentials available for service: {service or 'default'}")
+    
+    def _get_client_credentials(self, user_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract client-provided credentials from user context."""
+        credentials = {
+            "token": None,
+            "type": None,
+            "source": "client",
+            "metadata": {}
+        }
+        
+        # Check for per-request authentication token
+        auth_token = user_context.get("auth_token")
+        auth_type = user_context.get("auth_type", "bearer")
+        auth_metadata = user_context.get("auth_metadata", {})
+        
+        if auth_token:
+            credentials["token"] = auth_token
+            credentials["type"] = auth_type
+            credentials["metadata"] = {
+                "client_ip": user_context.get("client_ip"),
+                "request_id": user_context.get("request_id"),
+                "auth_source": auth_metadata.get("source"),
+                "timestamp": user_context.get("timestamp")
+            }
+        
+        return credentials
+    
+    def _get_oauth_credentials(self, user_context: Dict[str, Any], service: Optional[str]) -> Dict[str, Any]:
+        """Extract OAuth credentials from user context or service config."""
+        credentials = {
+            "token": None,
+            "type": "oauth",
+            "source": "oauth",
+            "metadata": {}
+        }
+        
+        # Check user context for OAuth token first
+        if user_context.get("oauth_access_token"):
+            credentials["token"] = user_context["oauth_access_token"]
+            credentials["metadata"] = {
+                "scope": user_context.get("oauth_scope"),
+                "expires_at": user_context.get("oauth_expires_at"),
+                "user_id": user_context.get("user_id")
+            }
+            return credentials
+        
+        # Check service configuration for OAuth
+        if service == "skyfi" and self.skyfi_config:
+            if (self.skyfi_config.oauth_access_token and 
+                self.skyfi_config.oauth_client_id):
+                credentials["token"] = self.skyfi_config.oauth_access_token
+                credentials["metadata"] = {
+                    "client_id": self.skyfi_config.oauth_client_id,
+                    "scope": self.skyfi_config.oauth_scope
+                }
+        
+        return credentials
+    
+    def _get_server_credentials(self, service: Optional[str]) -> Dict[str, Any]:
+        """Extract server-configured credentials."""
+        credentials = {
+            "token": None,
+            "type": "server",
+            "source": "server_config",
+            "metadata": {}
+        }
+        
+        if service == "skyfi" and self.skyfi_config:
+            # Try API key first
+            if self.skyfi_config.api_key:
+                credentials["token"] = self.skyfi_config.api_key
+                credentials["type"] = "api_key"
+                credentials["metadata"] = {
+                    "workspace": self.skyfi_config.default_workspace,
+                    "rate_limit": self.skyfi_config.rate_limit
+                }
+            # Try personal token as fallback
+            elif self.skyfi_config.personal_token:
+                credentials["token"] = self.skyfi_config.personal_token
+                credentials["type"] = "personal_token"
+        
+        elif service == "weather" and self.weather_config:
+            # Weather service API key
+            api_key = getattr(self.weather_config, 'api_key', None)
+            if api_key:
+                credentials["token"] = api_key
+                credentials["type"] = "api_key"
+        
+        return credentials
+    
+    def _get_environment_credentials(self, service: Optional[str]) -> Dict[str, Any]:
+        """Extract environment-based credentials as fallback."""
+        import os
+        
+        credentials = {
+            "token": None,
+            "type": "environment",
+            "source": "environment",
+            "metadata": {}
+        }
+        
+        if service == "skyfi":
+            # Check environment variables
+            env_token = (os.getenv("SKYFI_API_KEY") or 
+                        os.getenv("SKYFI_OAUTH_ACCESS_TOKEN") or 
+                        os.getenv("SKYFI_PERSONAL_TOKEN"))
+            if env_token:
+                credentials["token"] = env_token
+                # Determine type based on which env var was found
+                if os.getenv("SKYFI_API_KEY") == env_token:
+                    credentials["type"] = "api_key"
+                elif os.getenv("SKYFI_OAUTH_ACCESS_TOKEN") == env_token:
+                    credentials["type"] = "oauth"
+                else:
+                    credentials["type"] = "personal_token"
+        
+        elif service == "weather":
+            env_token = (os.getenv("WEATHER_API_KEY") or 
+                        os.getenv("OPENWEATHER_API_KEY"))
+            if env_token:
+                credentials["token"] = env_token
+                credentials["type"] = "api_key"
+        
+        return credentials
+    
+    def get_service_credentials(self, service: str, user_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Get credentials specifically for a service with validation."""
+        try:
+            credentials = self.get_effective_credentials(user_context, service)
+            
+            # Validate credentials for service
+            if not self._validate_credentials_for_service(credentials, service):
+                raise SkyFiMCPError(f"Invalid credentials for service: {service}")
+            
+            return credentials
+            
+        except Exception as e:
+            logger.error(f"Failed to get credentials for service {service}: {e}")
+            raise
+    
+    def _validate_credentials_for_service(self, credentials: Dict[str, Any], service: str) -> bool:
+        """Validate that credentials are appropriate for the service."""
+        if not credentials.get("token"):
+            return False
+        
+        credential_type = credentials.get("type")
+        
+        if service == "skyfi":
+            # SkyFi accepts api_key, oauth, or personal_token
+            return credential_type in ["api_key", "oauth", "personal_token", "bearer"]
+        
+        elif service == "weather":
+            # Weather services typically use API keys
+            return credential_type in ["api_key"]
+        
+        elif service == "osm":
+            # OSM doesn't require authentication for basic operations
+            return True
+        
+        return False
+    
+    def update_user_context_safe(self, updates: Dict[str, Any]) -> None:
+        """Thread-safe update of user context."""
+        with self._context_lock:
+            # Create a deep copy to avoid mutation issues
+            current_context = deepcopy(self.user_context)
+            current_context.update(updates)
+            self.user_context = current_context
+            
+            logger.debug(f"Updated user context with keys: {list(updates.keys())}")
+    
+    def get_credential_summary(self) -> Dict[str, Any]:
+        """Get a summary of available credentials (for debugging/monitoring)."""
+        summary = {
+            "services": {},
+            "user_context_available": bool(self.user_context),
+            "timestamp": self.user_context.get("timestamp"),
+            "client_ip": self.user_context.get("client_ip")
+        }
+        
+        for service in ["skyfi", "weather", "osm"]:
+            try:
+                creds = self.get_effective_credentials(service=service)
+                summary["services"][service] = {
+                    "available": True,
+                    "type": creds.get("type"),
+                    "source": creds.get("source"),
+                    "precedence_level": creds.get("precedence_level")
+                }
+            except Exception:
+                summary["services"][service] = {
+                    "available": False,
+                    "type": None,
+                    "source": None,
+                    "precedence_level": 0
+                }
+        
+        return summary
+    
     def __repr__(self) -> str:
         """String representation for debugging."""
         return (
