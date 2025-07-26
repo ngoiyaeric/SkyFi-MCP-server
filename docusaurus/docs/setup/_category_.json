@@ -1,0 +1,8 @@
+{
+  "label": "MCP Client Setup",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "description": "Configure SkyFi MCP Server with your preferred AI development environment."
+  }
+}

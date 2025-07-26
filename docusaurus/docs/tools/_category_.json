@@ -1,0 +1,8 @@
+{
+  "label": "Tools Reference",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "description": "Comprehensive documentation for all 21 SkyFi MCP Server tools."
+  }
+}

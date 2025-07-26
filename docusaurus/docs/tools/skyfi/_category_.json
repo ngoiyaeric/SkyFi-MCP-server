@@ -1,0 +1,8 @@
+{
+  "label": "SkyFi Satellite Tools",
+  "position": 1,
+  "link": {
+    "type": "generated-index",
+    "description": "13 specialized tools for satellite imagery access through the SkyFi platform."
+  }
+}

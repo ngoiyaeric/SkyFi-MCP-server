@@ -1,0 +1,8 @@
+{
+  "label": "OpenStreetMap Tools",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "description": "8 geospatial tools for geocoding, search, and geographic analysis using OpenStreetMap data."
+  }
+}
