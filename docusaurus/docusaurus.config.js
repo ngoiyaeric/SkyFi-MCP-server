@@ -23,12 +23,12 @@ const config = {
   url: 'https://pskinnertech.github.io',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: '/SkyFi-MCP/',
+  baseUrl: '/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
   organizationName: 'PSkinnerTech', // Usually your GitHub org/user name.
-  projectName: 'SkyFi-MCP', // Usually your repo name.
+  projectName: 'SkyFi-MCP-server', // Usually your repo name.
 
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
@@ -51,7 +51,7 @@ const config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/PSkinnerTech/SkyFi-MCP/tree/main/docusaurus/',
+            'https://github.com/PSkinnerTech/SkyFi-MCP-server/tree/main/docusaurus/',
         },
         blog: false, // Disable blog functionality
         theme: {
@@ -80,7 +80,7 @@ const config = {
             label: 'Documentation',
           },
           {
-            href: 'https://github.com/PSkinnerTech/SkyFi-MCP',
+            href: 'https://github.com/PSkinnerTech/SkyFi-MCP-server',
             label: 'GitHub',
             position: 'right',
           },
@@ -133,11 +133,11 @@ const config = {
             items: [
               {
                 label: 'GitHub Repository',
-                href: 'https://github.com/PSkinnerTech/SkyFi-MCP',
+                href: 'https://github.com/PSkinnerTech/SkyFi-MCP-server',
               },
               {
                 label: 'Issues & Support',
-                href: 'https://github.com/PSkinnerTech/SkyFi-MCP/issues',
+                href: 'https://github.com/PSkinnerTech/SkyFi-MCP-server/issues',
               },
               {
                 label: 'MCP Protocol',
@@ -150,7 +150,7 @@ const config = {
             items: [
               {
                 label: 'GitHub',
-                href: 'https://github.com/PSkinnerTech/SkyFi-MCP',
+                href: 'https://github.com/PSkinnerTech/SkyFi-MCP-server',
               },
             ],
           },
