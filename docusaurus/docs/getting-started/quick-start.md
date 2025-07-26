@@ -91,7 +91,7 @@ Add this configuration to your Claude Desktop config file:
 </TabItem>
 <TabItem value="windsurf" label="Windsurf">
 
-### Windsurf (Codeium) Setup
+### Windsurf Setup
 
 1. **Open Windsurf Settings** (`Ctrl/Cmd + ,`)
 2. **Navigate to Extensions** → **MCP Servers**

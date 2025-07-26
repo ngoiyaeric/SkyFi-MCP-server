@@ -1,4 +1,4 @@
-# Windsurf (Codeium) Setup
+# Windsurf Setup
 
 Configure SkyFi MCP Server with Windsurf, Codeium's AI-powered development environment, for collaborative coding with satellite imagery integration.
 

@@ -63,23 +63,9 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'Legacy Tutorial',
-      collapsed: true,
+      label: 'Technical Documentation',
       items: [
-        'tutorial-basics/create-a-document',
-        'tutorial-basics/create-a-blog-post',
-        'tutorial-basics/markdown-features',
-        'tutorial-basics/deploy-your-site',
-        'tutorial-basics/congratulations',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Advanced',
-      collapsed: true,
-      items: [
-        'tutorial-extras/manage-docs-versions',
-        'tutorial-extras/translate-your-site',
+        'technical/mcp-protocol',
       ],
     },
   ],

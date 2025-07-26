@@ -219,7 +219,7 @@ Create `.cursorrules` in your project root:
 }
 ```
 
-### Windsurf (Codeium)
+### Windsurf
 
 **Global Configuration:**
 1. Open Windsurf Settings (`Ctrl/Cmd + ,`)

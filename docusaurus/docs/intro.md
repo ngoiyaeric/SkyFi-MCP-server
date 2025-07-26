@@ -31,7 +31,7 @@ With SkyFi MCP Server, you get **21 powerful tools** across two main categories:
 
 - **Claude Desktop** - Full integration with Claude's desktop application
 - **Cursor AI** - Enhanced coding with satellite imagery context
-- **Windsurf (Codeium)** - Geospatial intelligence in your development workflow  
+- **Windsurf** - Geospatial intelligence in your development workflow  
 - **VSCode** - Satellite data access directly in your favorite editor
 
 ###  Key Features

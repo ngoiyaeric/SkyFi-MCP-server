@@ -22,7 +22,7 @@ AI-powered code editor with enhanced development features.
 
 [→ Cursor AI Setup](./cursor-ai)
 
-###  **Windsurf (Codeium)**
+###  **Windsurf**
 Advanced AI coding assistant with collaborative features.
 
 **Best for**: Team development, collaborative coding, enterprise use
