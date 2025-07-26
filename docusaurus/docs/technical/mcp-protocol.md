@@ -376,7 +376,7 @@ for tool in tools[:5]:
 - [Installation Guide](../getting-started/installation) - Set up your MCP server
 - [Client Setup](../setup/overview) - Configure your AI client
 - [Tools Reference](../tools/overview) - Explore available tools
-- [Architecture Overview](./architecture) - System design details
+- [GitHub Repository](https://github.com/PSkinnerTech/SkyFi-MCP-server) - Source code and architecture
 
 ## References
 

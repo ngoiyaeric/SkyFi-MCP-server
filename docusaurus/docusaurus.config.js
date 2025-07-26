@@ -98,16 +98,16 @@ const config = {
             title: 'Documentation',
             items: [
               {
-                label: 'Tutorial',
+                label: 'Getting Started',
                 to: '/docs/',
               },
               {
-                label: 'Create a Document',
-                to: '/docs/tutorial-basics/create-a-document',
+                label: 'Tools Reference',
+                to: '/docs/tools/overview',
               },
               {
-                label: 'Deploy Your Site',
-                to: '/docs/tutorial-basics/deploy-your-site',
+                label: 'MCP Protocol',
+                to: '/docs/technical/mcp-protocol',
               },
             ],
           },
