@@ -12,6 +12,7 @@ RUN npm run build
 FROM python:3.10-slim AS python-builder
 WORKDIR /app
 COPY pyproject.toml .
+COPY README.md .
 # Copy the source code for the python application
 COPY src ./src
 # Install the application and its dependencies
