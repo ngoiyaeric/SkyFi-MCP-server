@@ -8,7 +8,6 @@ FROM python:3.10-slim
 WORKDIR /app
 
 COPY pyproject.toml pyproject.toml
-COPY LICENSE LICENSE
 COPY README.md README.md
 COPY skyfi_mcp_server/* skyfi_mcp_server/
 
