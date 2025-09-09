@@ -99,15 +99,15 @@ const config = {
             items: [
               {
                 label: 'Getting Started',
-                to: '/docs/',
+                to: '/',
               },
               {
                 label: 'Tools Reference',
-                to: '/docs/tools/overview',
+                to: '/tools/overview',
               },
               {
                 label: 'MCP Protocol',
-                to: '/docs/technical/mcp-protocol',
+                to: '/technical/mcp-protocol',
               },
             ],
           },
