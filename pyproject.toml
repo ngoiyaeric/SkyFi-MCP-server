@@ -52,6 +52,8 @@ dev = [
     "pre-commit>=3.3.0",
     "bandit>=1.7.0",
     "safety>=2.3.0",
+    "fastapi>=0.100.0",
+    "respx>=0.20.0",
 ]
 security = [
     "cryptography>=41.0.0",
